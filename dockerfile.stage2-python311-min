@@ -1,0 +1,49 @@
+# Stage 1: Full builder to compile latest python3 build
+FROM ubuntu:latest as builder
+RUN apt update && apt dist-upgrade -y && \
+  apt install build-essential curl git -y && \
+  apt install -y zlib1g-dev libncurses5-dev libgdbm-dev \
+  libnss3-dev libssl-dev libreadline-dev libffi-dev pkg-config \
+  libsqlite3-dev libbz2-dev liblzma-dev
+
+RUN mkdir /build
+RUN curl https://www.python.org/ftp/python/3.11.3/Python-3.11.3.tgz > /build/Python-3.11.3.tgz
+WORKDIR /build
+RUN tar zxvf Python-3.11.3.tgz
+WORKDIR /build/Python-3.11.3
+RUN ./configure --prefix=/usr/local/python  --enable-optimizations
+RUN make all && make install
+# Setup python entrypoints and libraries
+RUN mkdir -p /python
+WORKDIR /python
+COPY test.py /python
+# Install dependencies
+RUN /usr/local/python/bin/pip3 install loguru typer psycopg2-binary vertica-python
+
+# Stage 2
+FROM ubuntu:latest as stage2
+# Clean up unnecessary
+RUN mkdir /python
+RUN rm -rf /opt /mnt /media /home /boot /root /srv && \
+    rm -rf /var/* && \
+    cd /usr/lib && rm -rf apt dpk init && \
+    cd /usr/bin && rm -f *
+COPY --from=builder /python /python
+COPY --from=builder /usr/bin/bash /usr/bin
+COPY --from=builder /usr/bin/dash /usr/bin
+COPY --from=builder /usr/bin/sh /usr/bin
+COPY --from=builder /usr/bin/ln /usr/bin
+COPY --from=builder /usr/bin/rm /usr/bin
+COPY --from=builder /usr/bin/ls /usr/bin
+RUN ln -s /run /var/run && \ 
+    ln -s /tmp /var/tmp
+COPY --from=builder /usr/local /usr/local/
+# No more dependencies can be installed after this point
+RUN /usr/local/python/bin/python3 -m pip uninstall -y pip setuptools
+RUN rm -f /usr/bin/ln /usr/bin/rm
+
+# Stage 3 - scratch build
+FROM scratch
+COPY --from=stage2 / /
+WORKDIR /python
+CMD /usr/local/python/bin/python3.11 test.py

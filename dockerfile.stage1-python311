@@ -1,0 +1,23 @@
+# Stage 1: Full builder to compile latest python3 build
+FROM ubuntu:latest as builder
+RUN apt update && apt dist-upgrade -y && \
+  apt install build-essential curl git -y && \
+  apt install -y zlib1g-dev libncurses5-dev libgdbm-dev \
+  libnss3-dev libssl-dev libreadline-dev libffi-dev pkg-config \
+  libsqlite3-dev libbz2-dev liblzma-dev
+
+RUN mkdir /build
+RUN curl https://www.python.org/ftp/python/3.11.3/Python-3.11.3.tgz > /build/Python-3.11.3.tgz
+WORKDIR /build
+RUN tar zxvf Python-3.11.3.tgz
+WORKDIR /build/Python-3.11.3
+RUN ./configure --prefix=/usr/local/python  --enable-optimizations
+RUN make all && make install
+# Setup python entrypoints and libraries
+RUN mkdir -p /python
+RUN curl -sSL https://install.python-poetry.org | POETRY_HOME=/usr/local/python/poetry /usr/local/python/bin/python3 -
+RUN mkdir /python
+WORKDIR /python
+COPY test.py /python
+COPY pyproject.toml /python
+RUN /usr/local/python/poetry/bin/poetry update
